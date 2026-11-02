@@ -1,0 +1,133 @@
+// Prisma Schema for DriveVault - Multi-Account Google Drive Aggregator
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model DriveAccount {
+  id               String   @id @default(uuid())
+  email            String   @unique
+  displayName      String   @default("")
+  profilePicture   String   @default("")
+  encryptedAccessToken  String
+  encryptedRefreshToken String
+  tokenExpiresAt   DateTime
+  totalBytes       BigInt   @default(16106127360) // 15GB default
+  usedBytes        BigInt   @default(0)
+  status           String   @default("active") // active | needs_reauth | syncing | error
+  lastSyncAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  files      FileRecord[]
+  fileChunks FileChunk[]
+  notes      DriveNote[]
+}
+
+model FileRecord {
+  id             String   @id @default(uuid())
+  filename       String
+  sizeBytes      BigInt
+  mimeType       String   @default("application/octet-stream")
+  virtualPath    String   @default("/")
+  googleDriveId  String?
+  isChunked      Boolean  @default(false)
+  totalChunks    Int      @default(0)
+  driveAccountId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  driveAccount DriveAccount? @relation(fields: [driveAccountId], references: [id], onDelete: SetNull)
+  chunks       FileChunk[]
+  shares       SharedLink[]
+
+  isDeleted    Boolean       @default(false)
+  deletedAt    DateTime?
+
+  isStarred    Boolean       @default(false)
+  tags         String        @default("")
+
+  @@index([virtualPath])
+  @@index([driveAccountId])
+  @@index([filename])
+  @@index([isDeleted])
+  @@index([isStarred])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String   // upload | download | delete | restore | share | rename | move | star
+  details   String   // e.g. "Uploaded report.pdf (14.2 MB) to C:"
+  userEmail String?
+  createdAt DateTime @default(now())
+
+  @@index([action])
+  @@index([createdAt])
+}
+
+model SharedLink {
+  id           String      @id @default(uuid())
+  code         String      @unique // short code for link
+  fileRecordId String
+  passwordHash String?     // optional password protection
+  expiresAt    DateTime?   // optional expiration
+  downloadCount Int        @default(0)
+  createdAt    DateTime    @default(now())
+
+  fileRecord   FileRecord  @relation(fields: [fileRecordId], references: [id], onDelete: Cascade)
+
+  @@index([fileRecordId])
+  @@index([code])
+}
+
+model FileChunk {
+  id             String   @id @default(uuid())
+  fileRecordId   String
+  chunkIndex     Int
+  sizeBytes      BigInt
+  googleDriveId  String
+  driveAccountId String
+  createdAt      DateTime @default(now())
+
+  fileRecord   FileRecord   @relation(fields: [fileRecordId], references: [id], onDelete: Cascade)
+  driveAccount DriveAccount @relation(fields: [driveAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([fileRecordId, chunkIndex])
+  @@index([driveAccountId])
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  avatarUrl    String?
+  role         String   @default("user")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model DriveNote {
+  id             String        @id @default(uuid())
+  title          String
+  content        String
+  category       String        @default("reminder") // reminder | mapping | general | backup
+  driveLetter    String?       // e.g. "C:", "D:", "V:"
+  driveAccountId String?
+  color          String        @default("amber") // amber | cyan | emerald | purple | rose
+  isPinned       Boolean       @default(false)
+  tags           String        @default("")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  driveAccount   DriveAccount? @relation(fields: [driveAccountId], references: [id], onDelete: SetNull)
+
+  @@index([driveAccountId])
+  @@index([isPinned])
+}
+
+
