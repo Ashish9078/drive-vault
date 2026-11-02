@@ -748,7 +748,7 @@ export default function FileBrowser({
                   <div>
                     <h4 className="font-semibold text-red-200 text-sm">Step 2: Permanent Cloud Deletion Warning</h4>
                     <p className="text-xs text-red-300/80 mt-1 leading-relaxed">
-                      This action will permanently erase <strong className="text-white">"{deletingFile.filename}"</strong> from Google Drive.
+                      This action will permanently erase <strong className="text-white">&quot;{deletingFile.filename}&quot;</strong> from Google Drive.
                     </p>
                   </div>
                 </div>
