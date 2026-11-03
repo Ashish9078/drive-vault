@@ -1,6 +1,7 @@
 // Prisma Schema for DriveVault - Multi-Account Google Drive Aggregator
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
