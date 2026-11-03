@@ -15,6 +15,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "DriveVault — Unlimited Google Drive Cloud Storage Pool",
   description: "Seamlessly aggregate 10, 50, 100+ Google Drive accounts (15GB each) into a single unified high-performance storage dashboard with resumable multi-chunk uploads.",
+  icons: {
+    icon: '/logo-120.png',
+    apple: '/logo-512.png',
+  },
 };
 
 export default function RootLayout({
