@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import prisma, { ensureDbInitialized } from '@/lib/prisma';
 
 // Serialize BigInt values to strings for JSON
 function serializeAccount(account: Record<string, unknown>) {
@@ -12,6 +12,7 @@ function serializeAccount(account: Record<string, unknown>) {
 
 export async function GET(request: NextRequest) {
   try {
+    await ensureDbInitialized();
     const accounts = await prisma.driveAccount.findMany({
       orderBy: { createdAt: 'asc' },
     });

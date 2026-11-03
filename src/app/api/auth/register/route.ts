@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import prisma, { ensureDbInitialized } from '@/lib/prisma';
 import { hashPassword, signToken, AUTH_COOKIE_NAME } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
+    await ensureDbInitialized();
     const { email, password, name } = await request.json();
 
     if (!email || !password) {
@@ -75,10 +76,13 @@ export async function POST(request: NextRequest) {
     });
 
     return response;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Registration failed:', error);
     return NextResponse.json(
-      { error: 'Registration failed. Please try again.' },
+      { 
+        error: error?.message || 'Registration failed. Please try again.',
+        details: String(error?.stack || error)
+      },
       { status: 500 }
     );
   }

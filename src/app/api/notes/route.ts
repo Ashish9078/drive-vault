@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import prisma, { ensureDbInitialized } from '@/lib/prisma';
 
 export async function GET(request: NextRequest) {
   try {
+    await ensureDbInitialized();
     const { searchParams } = new URL(request.url);
     const driveAccountId = searchParams.get('driveAccountId');
     const category = searchParams.get('category');

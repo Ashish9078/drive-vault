@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import prisma, { ensureDbInitialized } from '@/lib/prisma';
 
 export async function GET(request: NextRequest) {
   try {
+    await ensureDbInitialized();
     const limit = parseInt(request.nextUrl.searchParams.get('limit') || '50');
     const logs = await prisma.auditLog.findMany({
       orderBy: { createdAt: 'desc' },

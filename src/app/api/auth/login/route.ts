@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import prisma, { ensureDbInitialized } from '@/lib/prisma';
 import { verifyPassword, signToken, AUTH_COOKIE_NAME } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
+    await ensureDbInitialized();
     const { email, password } = await request.json();
 
     if (!email || !password) {

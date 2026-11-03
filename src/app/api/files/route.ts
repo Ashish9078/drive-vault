@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import prisma, { ensureDbInitialized } from '@/lib/prisma';
 
 function serializeFile(file: Record<string, unknown>) {
   return {
@@ -10,6 +10,7 @@ function serializeFile(file: Record<string, unknown>) {
 
 export async function GET(request: NextRequest) {
   try {
+    await ensureDbInitialized();
     const searchParams = request.nextUrl.searchParams;
     const query = searchParams.get('q') || '';
     const path = searchParams.get('path');
