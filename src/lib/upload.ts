@@ -33,9 +33,12 @@ export function clearUploadProgress(uploadId: string) {
 /**
  * Find the best drive account with the most available space.
  */
-export async function findBestDriveAccount(requiredBytes: bigint) {
+export async function findBestDriveAccount(requiredBytes: bigint, userId?: string) {
   const accounts = await prisma.driveAccount.findMany({
-    where: { status: 'active' },
+    where: {
+      status: 'active',
+      ...(userId ? { userId } : {}),
+    },
     orderBy: { usedBytes: 'asc' },
   });
 
@@ -53,9 +56,12 @@ export async function findBestDriveAccount(requiredBytes: bigint) {
 /**
  * Find accounts for split upload across multiple drives.
  */
-export async function findAccountsForSplitUpload(totalBytes: bigint) {
+export async function findAccountsForSplitUpload(totalBytes: bigint, userId?: string) {
   const accounts = await prisma.driveAccount.findMany({
-    where: { status: 'active' },
+    where: {
+      status: 'active',
+      ...(userId ? { userId } : {}),
+    },
     orderBy: { usedBytes: 'asc' },
   });
 
@@ -166,7 +172,8 @@ export async function resumableUpload(
   fileBuffer: Buffer,
   filename: string,
   mimeType: string,
-  virtualPath: string = '/'
+  virtualPath: string = '/',
+  userId?: string
 ): Promise<string> {
   const totalSize = fileBuffer.length;
   const startTime = Date.now();
@@ -187,6 +194,7 @@ export async function resumableUpload(
       const demoId = `demo_gdrive_id_${Date.now()}`;
       await prisma.fileRecord.create({
         data: {
+          userId: userId || null,
           filename,
           sizeBytes: BigInt(totalSize),
           mimeType,
@@ -248,6 +256,7 @@ export async function resumableUpload(
     // Create file record in database
     await prisma.fileRecord.create({
       data: {
+        userId: userId || null,
         filename,
         sizeBytes: BigInt(totalSize),
         mimeType,
@@ -298,7 +307,8 @@ export async function splitUpload(
   filename: string,
   mimeType: string,
   uploadPlan: Array<{ accountId: string; email: string; bytes: bigint }>,
-  virtualPath: string = '/'
+  virtualPath: string = '/',
+  userId?: string
 ): Promise<string> {
   const totalSize = fileBuffer.length;
   const startTime = Date.now();
@@ -317,6 +327,7 @@ export async function splitUpload(
   // Create the parent file record
   const fileRecord = await prisma.fileRecord.create({
     data: {
+      userId: userId || null,
       filename,
       sizeBytes: BigInt(totalSize),
       mimeType,

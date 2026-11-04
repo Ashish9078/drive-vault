@@ -77,11 +77,16 @@ export default function Dashboard() {
       const data = await res.json();
       if (data.authenticated && data.user) {
         setUser(data.user);
+        return true;
       } else {
         setUser(null);
+        window.location.href = '/login';
+        return false;
       }
     } catch {
       setUser(null);
+      window.location.href = '/login';
+      return false;
     }
   }, []);
 
@@ -130,7 +135,10 @@ export default function Dashboard() {
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await Promise.all([fetchUser(), fetchAccounts(), fetchFiles(), fetchNotes()]);
+      const isAuth = await fetchUser();
+      if (isAuth) {
+        await Promise.all([fetchAccounts(), fetchFiles(), fetchNotes()]);
+      }
       setLoading(false);
     };
     init();

@@ -3,10 +3,12 @@ import { google } from 'googleapis';
 import { getOAuth2Client } from '@/lib/google-drive';
 import { encrypt } from '@/lib/encryption';
 import prisma from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');
+  const state = searchParams.get('state');
 
   if (!code) {
     return NextResponse.redirect(new URL('/?error=no_code', request.url));
@@ -30,18 +32,27 @@ export async function GET(request: NextRequest) {
     const displayName = userInfo.data.name || '';
     const profilePicture = userInfo.data.picture || '';
 
-    // Check account limit
-    const accountCount = await prisma.driveAccount.count();
+    // Determine logged in userId
+    const currentUser = await getCurrentUser();
+    const userId = currentUser?.userId || (state && state.length > 5 ? state : null);
+
+    // Check account count for this user
+    const accountCount = await prisma.driveAccount.count({
+      where: { userId },
+    });
     
-    // Check if account already exists
-    const existingAccount = await prisma.driveAccount.findUnique({
-      where: { email },
+    // Check if account already exists for this user
+    const existingAccount = await prisma.driveAccount.findFirst({
+      where: {
+        userId,
+        email,
+      },
     });
 
     if (existingAccount) {
       // Update existing account tokens
       await prisma.driveAccount.update({
-        where: { email },
+        where: { id: existingAccount.id },
         data: {
           encryptedAccessToken: encrypt(tokens.access_token || ''),
           encryptedRefreshToken: tokens.refresh_token 
@@ -56,7 +67,7 @@ export async function GET(request: NextRequest) {
         },
       });
     } else {
-      if (accountCount >= 10) {
+      if (accountCount >= 100) {
         return NextResponse.redirect(
           new URL('/?error=max_accounts', request.url)
         );
@@ -65,6 +76,7 @@ export async function GET(request: NextRequest) {
       // Create new account
       await prisma.driveAccount.create({
         data: {
+          userId,
           email,
           displayName,
           profilePicture,
@@ -74,6 +86,17 @@ export async function GET(request: NextRequest) {
           totalBytes: BigInt(quota?.limit || '16106127360'),
           usedBytes: BigInt(quota?.usage || '0'),
           status: 'active',
+        },
+      });
+    }
+
+    if (userId) {
+      await prisma.auditLog.create({
+        data: {
+          userId,
+          action: 'connect',
+          details: `Connected Google Drive: ${email} (${displayName || 'Account'})`,
+          userEmail: currentUser?.email || email,
         },
       });
     }

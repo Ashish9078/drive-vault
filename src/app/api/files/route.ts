@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma, { ensureDbInitialized } from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/auth';
 
 function serializeFile(file: Record<string, unknown>) {
   return {
@@ -11,6 +12,19 @@ function serializeFile(file: Record<string, unknown>) {
 export async function GET(request: NextRequest) {
   try {
     await ensureDbInitialized();
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({
+        files: [],
+        pagination: {
+          page: 1,
+          limit: 50,
+          total: 0,
+          totalPages: 0,
+        },
+      });
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const query = searchParams.get('q') || '';
     const path = searchParams.get('path');
@@ -23,6 +37,7 @@ export async function GET(request: NextRequest) {
     const starred = searchParams.get('starred') === 'true';
 
     const where: Record<string, unknown> = {
+      userId: user.userId,
       isDeleted: trash ? true : false,
     };
 
@@ -104,6 +119,11 @@ export async function GET(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { fileId, permanent } = await request.json();
 
     if (!fileId) {
@@ -113,8 +133,8 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const file = await prisma.fileRecord.findUnique({
-      where: { id: fileId },
+    const file = await prisma.fileRecord.findFirst({
+      where: { id: fileId, userId: user.userId },
       include: { chunks: true },
     });
 
@@ -201,11 +221,24 @@ export async function DELETE(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { action, fileId, virtualPath, filename, isStarred, tags } = body;
 
     if (!fileId) {
       return NextResponse.json({ error: 'fileId is required' }, { status: 400 });
+    }
+
+    const file = await prisma.fileRecord.findFirst({
+      where: { id: fileId, userId: user.userId },
+    });
+
+    if (!file) {
+      return NextResponse.json({ error: 'File not found' }, { status: 404 });
     }
 
     if (action === 'restore') {
@@ -218,6 +251,7 @@ export async function PATCH(request: NextRequest) {
       });
       await prisma.auditLog.create({
         data: {
+          userId: user.userId,
           action: 'restore',
           details: `Restored "${updated.filename}" from Recycle Bin`,
         },
@@ -234,6 +268,7 @@ export async function PATCH(request: NextRequest) {
       });
       await prisma.auditLog.create({
         data: {
+          userId: user.userId,
           action: 'move',
           details: `Moved "${updated.filename}" to folder "${virtualPath || '/'}"`,
         },
@@ -251,6 +286,7 @@ export async function PATCH(request: NextRequest) {
       });
       await prisma.auditLog.create({
         data: {
+          userId: user.userId,
           action: 'rename',
           details: `Renamed file to "${filename.trim()}"`,
         },

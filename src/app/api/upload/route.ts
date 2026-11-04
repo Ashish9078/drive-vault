@@ -7,11 +7,20 @@ import {
   splitUpload,
   getUploadProgress,
 } from '@/lib/upload';
+import { getCurrentUser } from '@/lib/auth';
 
 export const maxDuration = 300; // 5 minutes
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Please login to upload files' },
+        { status: 401 }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
 
@@ -29,8 +38,8 @@ export async function POST(request: NextRequest) {
     const fileSize = BigInt(fileBuffer.length);
     const virtualPath = (formData.get('virtualPath') as string) || '/';
 
-    // Try to find a single account with enough space
-    const bestAccount = await findBestDriveAccount(fileSize);
+    // Try to find a single account belonging to this user with enough space
+    const bestAccount = await findBestDriveAccount(fileSize, user.userId);
 
     if (bestAccount) {
       // Single account upload
@@ -40,7 +49,8 @@ export async function POST(request: NextRequest) {
         fileBuffer,
         filename,
         mimeType,
-        virtualPath
+        virtualPath,
+        user.userId
       );
 
       return NextResponse.json({
@@ -52,8 +62,8 @@ export async function POST(request: NextRequest) {
         virtualPath,
       });
     } else {
-      // Need to split across multiple accounts
-      const plan = await findAccountsForSplitUpload(fileSize);
+      // Need to split across multiple accounts of this user
+      const plan = await findAccountsForSplitUpload(fileSize, user.userId);
 
       const fileRecordId = await splitUpload(
         uploadId,
@@ -61,7 +71,8 @@ export async function POST(request: NextRequest) {
         filename,
         mimeType,
         plan,
-        virtualPath
+        virtualPath,
+        user.userId
       );
 
       return NextResponse.json({
@@ -89,7 +100,7 @@ export async function GET(request: NextRequest) {
 
   if (!uploadId) {
     return NextResponse.json(
-      { error: 'uploadId is required' },
+      { error: 'uploadId parameter is required' },
       { status: 400 }
     );
   }
@@ -98,7 +109,7 @@ export async function GET(request: NextRequest) {
 
   if (!progress) {
     return NextResponse.json(
-      { error: 'Upload not found' },
+      { error: 'Upload not found or expired' },
       { status: 404 }
     );
   }

@@ -1,15 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma, { ensureDbInitialized } from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
     await ensureDbInitialized();
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ notes: [] });
+    }
+
     const { searchParams } = new URL(request.url);
     const driveAccountId = searchParams.get('driveAccountId');
     const category = searchParams.get('category');
     const q = searchParams.get('q');
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = {
+      userId: user.userId,
+    };
 
     if (driveAccountId) {
       where.driveAccountId = driveAccountId;
@@ -57,6 +65,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const {
       title,
@@ -78,6 +91,7 @@ export async function POST(request: NextRequest) {
 
     const note = await prisma.driveNote.create({
       data: {
+        userId: user.userId,
         title,
         content,
         category,
@@ -110,6 +124,11 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { id, ...updates } = body;
 
@@ -118,6 +137,14 @@ export async function PATCH(request: NextRequest) {
         { error: 'Note id is required' },
         { status: 400 }
       );
+    }
+
+    const existing = await prisma.driveNote.findFirst({
+      where: { id, userId: user.userId },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Note not found' }, { status: 404 });
     }
 
     const note = await prisma.driveNote.update({
@@ -146,6 +173,11 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { id } = body;
 
@@ -154,6 +186,14 @@ export async function DELETE(request: NextRequest) {
         { error: 'Note id is required' },
         { status: 400 }
       );
+    }
+
+    const existing = await prisma.driveNote.findFirst({
+      where: { id, userId: user.userId },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Note not found' }, { status: 404 });
     }
 
     await prisma.driveNote.delete({

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
+import { getCurrentUser } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
@@ -59,8 +60,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'fileId is required' }, { status: 400 });
     }
 
-    const file = await prisma.fileRecord.findUnique({
-      where: { id: fileId },
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const file = await prisma.fileRecord.findFirst({
+      where: { id: fileId, userId: user.userId },
     });
 
     if (!file) {

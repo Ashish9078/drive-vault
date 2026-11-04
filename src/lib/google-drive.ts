@@ -16,12 +16,13 @@ export function getOAuth2Client() {
   );
 }
 
-export function getAuthUrl(): string {
+export function getAuthUrl(state?: string): string {
   const oauth2Client = getOAuth2Client();
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
     prompt: 'consent',
+    state: state || '',
   });
 }
 
@@ -180,6 +181,7 @@ export async function syncDriveFiles(accountId: string) {
       
       await prisma.fileRecord.create({
         data: {
+          userId: account.userId || null,
           filename: file.name || 'Untitled',
           sizeBytes: BigInt(file.size || '0'),
           mimeType: file.mimeType || 'application/octet-stream',

@@ -9,9 +9,26 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  avatarUrl    String?
+  role         String   @default("user")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  accounts     DriveAccount[]
+  files        FileRecord[]
+  notes        DriveNote[]
+  auditLogs    AuditLog[]
+}
+
 model DriveAccount {
   id               String   @id @default(uuid())
-  email            String   @unique
+  userId           String?
+  email            String
   displayName      String   @default("")
   profilePicture   String   @default("")
   encryptedAccessToken  String
@@ -24,13 +41,18 @@ model DriveAccount {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  user       User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
   files      FileRecord[]
   fileChunks FileChunk[]
   notes      DriveNote[]
+
+  @@unique([userId, email])
+  @@index([userId])
 }
 
 model FileRecord {
   id             String   @id @default(uuid())
+  userId         String?
   filename       String
   sizeBytes      BigInt
   mimeType       String   @default("application/octet-stream")
@@ -42,6 +64,7 @@ model FileRecord {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   driveAccount DriveAccount? @relation(fields: [driveAccountId], references: [id], onDelete: SetNull)
   chunks       FileChunk[]
   shares       SharedLink[]
@@ -52,6 +75,7 @@ model FileRecord {
   isStarred    Boolean       @default(false)
   tags         String        @default("")
 
+  @@index([userId])
   @@index([virtualPath])
   @@index([driveAccountId])
   @@index([filename])
@@ -61,11 +85,15 @@ model FileRecord {
 
 model AuditLog {
   id        String   @id @default(uuid())
+  userId    String?
   action    String   // upload | download | delete | restore | share | rename | move | star
   details   String   // e.g. "Uploaded report.pdf (14.2 MB) to C:"
   userEmail String?
   createdAt DateTime @default(now())
 
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
   @@index([action])
   @@index([createdAt])
 }
@@ -101,19 +129,9 @@ model FileChunk {
   @@index([driveAccountId])
 }
 
-model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  name         String?
-  passwordHash String
-  avatarUrl    String?
-  role         String   @default("user")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-}
-
 model DriveNote {
   id             String        @id @default(uuid())
+  userId         String?
   title          String
   content        String
   category       String        @default("reminder") // reminder | mapping | general | backup
@@ -125,10 +143,10 @@ model DriveNote {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
+  user           User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   driveAccount   DriveAccount? @relation(fields: [driveAccountId], references: [id], onDelete: SetNull)
 
+  @@index([userId])
   @@index([driveAccountId])
   @@index([isPinned])
 }
-
-

@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/auth';
 
 export async function GET() {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({
+        duplicateGroups: [],
+        largeFiles: [],
+        totalWastedBytes: '0',
+      });
+    }
+
     const allFiles = await prisma.fileRecord.findMany({
-      where: { isDeleted: false },
+      where: { userId: user.userId, isDeleted: false },
       include: {
         driveAccount: {
           select: { displayName: true, email: true },

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma, { ensureDbInitialized } from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/auth';
 
 // Serialize BigInt values to strings for JSON
 function serializeAccount(account: Record<string, unknown>) {
@@ -13,7 +14,22 @@ function serializeAccount(account: Record<string, unknown>) {
 export async function GET(request: NextRequest) {
   try {
     await ensureDbInitialized();
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({
+        accounts: [],
+        stats: {
+          totalPool: '0',
+          totalUsed: '0',
+          totalFree: '0',
+          accountCount: 0,
+          percentUsed: 0,
+        },
+      });
+    }
+
     const accounts = await prisma.driveAccount.findMany({
+      where: { userId: user.userId },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -46,13 +62,25 @@ export async function GET(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { accountId } = await request.json();
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
+    const { accountId } = await request.json();
     if (!accountId) {
       return NextResponse.json(
         { error: 'accountId is required' },
         { status: 400 }
       );
+    }
+
+    const account = await prisma.driveAccount.findFirst({
+      where: { id: accountId, userId: user.userId },
+    });
+
+    if (!account) {
+      return NextResponse.json({ error: 'Account not found' }, { status: 404 });
     }
 
     // Delete associated file chunks first
@@ -82,11 +110,16 @@ export async function DELETE(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { action } = await request.json();
 
     if (action === 'clear_demo') {
       const demoAccounts = await prisma.driveAccount.findMany({
-        where: { email: { contains: 'demo' } },
+        where: { userId: user.userId, email: { contains: 'demo' } },
       });
       for (const a of demoAccounts) {
         await prisma.fileChunk.deleteMany({ where: { driveAccountId: a.id } });
@@ -99,63 +132,21 @@ export async function POST(request: NextRequest) {
     if (action === 'seed_demo') {
       const DEMO_ACCOUNTS = [
         {
-          email: 'demo.personal@gmail.com',
+          email: `demo.personal.${user.userId.substring(0, 5)}@gmail.com`,
           displayName: 'Personal Drive (Primary)',
           usedBytes: BigInt(3435973836), // ~3.2 GB
           status: 'active',
         },
         {
-          email: 'demo.work@gmail.com',
+          email: `demo.work.${user.userId.substring(0, 5)}@gmail.com`,
           displayName: 'Work & Code Projects',
           usedBytes: BigInt(6227702579), // ~5.8 GB
           status: 'active',
         },
         {
-          email: 'demo.media@gmail.com',
+          email: `demo.media.${user.userId.substring(0, 5)}@gmail.com`,
           displayName: 'Media Vault 4K',
           usedBytes: BigInt(12240656793), // ~11.4 GB
-          status: 'active',
-        },
-        {
-          email: 'demo.backup@gmail.com',
-          displayName: 'System Backups',
-          usedBytes: BigInt(2254857830), // ~2.1 GB
-          status: 'active',
-        },
-        {
-          email: 'demo.datasets@gmail.com',
-          displayName: 'AI Model Weights & Data',
-          usedBytes: BigInt(9019431321), // ~8.4 GB
-          status: 'active',
-        },
-        {
-          email: 'demo.photos@gmail.com',
-          displayName: 'Photography RAW Archives',
-          usedBytes: BigInt(7194070220), // ~6.7 GB
-          status: 'active',
-        },
-        {
-          email: 'demo.videos@gmail.com',
-          displayName: 'Video Production Bin',
-          usedBytes: BigInt(14495514624), // ~13.5 GB (Windows high capacity alert)
-          status: 'active',
-        },
-        {
-          email: 'demo.shared@gmail.com',
-          displayName: 'Team Shared Space',
-          usedBytes: BigInt(4617089843), // ~4.3 GB
-          status: 'active',
-        },
-        {
-          email: 'demo.research@gmail.com',
-          displayName: 'Research Papers & Books',
-          usedBytes: BigInt(1932735283), // ~1.8 GB
-          status: 'active',
-        },
-        {
-          email: 'demo.cold@gmail.com',
-          displayName: 'Cold Storage Vault',
-          usedBytes: BigInt(966367641), // ~0.9 GB
           status: 'active',
         },
       ];
@@ -164,13 +155,14 @@ export async function POST(request: NextRequest) {
       const createdAccounts = [];
 
       for (const item of DEMO_ACCOUNTS) {
-        const existing = await prisma.driveAccount.findUnique({
-          where: { email: item.email },
+        const existing = await prisma.driveAccount.findFirst({
+          where: { userId: user.userId, email: item.email },
         });
 
         if (!existing) {
           const acc = await prisma.driveAccount.create({
             data: {
+              userId: user.userId,
               email: item.email,
               displayName: item.displayName,
               profilePicture: '',
@@ -187,84 +179,9 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Add sample files if files table is empty
-      const fileCount = await prisma.fileRecord.count();
-      if (fileCount === 0 && createdAccounts.length > 0) {
-        const sampleFiles = [
-          {
-            filename: 'Project_Quantum_Source.tar.gz',
-            sizeBytes: BigInt(1572864000), // 1.5 GB
-            mimeType: 'application/gzip',
-            virtualPath: '/Development',
-            driveAccountId: createdAccounts[0]?.id,
-          },
-          {
-            filename: 'Enterprise_Architecture_2026.pdf',
-            sizeBytes: BigInt(47185920), // 45 MB
-            mimeType: 'application/pdf',
-            virtualPath: '/Documents',
-            driveAccountId: createdAccounts[1]?.id,
-          },
-          {
-            filename: 'Nature_Cinematics_4K_60FPS.mp4',
-            sizeBytes: BigInt(8589934592), // 8 GB
-            mimeType: 'video/mp4',
-            virtualPath: '/Videos',
-            driveAccountId: createdAccounts[2]?.id,
-            isChunked: true,
-            totalChunks: 3,
-          },
-          {
-            filename: 'Database_Full_Dump_Oct.sql',
-            sizeBytes: BigInt(2147483648), // 2 GB
-            mimeType: 'application/sql',
-            virtualPath: '/Backups',
-            driveAccountId: createdAccounts[3]?.id,
-          },
-          {
-            filename: 'Llama3_FineTuned_Weights.safetensors',
-            sizeBytes: BigInt(5368709120), // 5 GB
-            mimeType: 'application/octet-stream',
-            virtualPath: '/AI-Models',
-            driveAccountId: createdAccounts[4]?.id,
-          },
-          {
-            filename: 'Portrait_Session_Studio_RAW.zip',
-            sizeBytes: BigInt(3758096384), // 3.5 GB
-            mimeType: 'application/zip',
-            virtualPath: '/Photography',
-            driveAccountId: createdAccounts[5]?.id,
-          },
-          {
-            filename: 'Podcast_Episode_Master_Audio.wav',
-            sizeBytes: BigInt(681574400), // 650 MB
-            mimeType: 'audio/wav',
-            virtualPath: '/Audio',
-            driveAccountId: createdAccounts[7]?.id,
-          },
-        ];
-
-        for (const file of sampleFiles) {
-          if (file.driveAccountId) {
-            await prisma.fileRecord.create({
-              data: {
-                filename: file.filename,
-                sizeBytes: file.sizeBytes,
-                mimeType: file.mimeType,
-                virtualPath: file.virtualPath,
-                googleDriveId: 'demo_gdrive_id_' + Math.random().toString(36).substring(7),
-                isChunked: file.isChunked || false,
-                totalChunks: file.totalChunks || 0,
-                driveAccountId: file.driveAccountId,
-              },
-            });
-          }
-        }
-      }
-
       return NextResponse.json({
         success: true,
-        message: '10 Google Drives mounted with 150GB pooled virtual capacity.',
+        message: 'Demo accounts loaded for this workspace.',
       });
     }
 
