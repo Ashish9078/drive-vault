@@ -144,6 +144,17 @@ export default function Dashboard() {
     init();
   }, [fetchUser, fetchAccounts, fetchFiles, fetchNotes]);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('success') === 'connected') {
+        fetchAccounts();
+        fetchFiles();
+        window.history.replaceState({}, '', '/');
+      }
+    }
+  }, [fetchAccounts, fetchFiles]);
+
   const handleLogout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });

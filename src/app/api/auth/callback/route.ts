@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
-import { getOAuth2Client } from '@/lib/google-drive';
+import { getOAuth2Client, syncDriveFiles } from '@/lib/google-drive';
 import { encrypt } from '@/lib/encryption';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
@@ -49,6 +49,8 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    let targetAccountId = existingAccount?.id;
+
     if (existingAccount) {
       // Update existing account tokens
       await prisma.driveAccount.update({
@@ -66,6 +68,7 @@ export async function GET(request: NextRequest) {
           status: 'active',
         },
       });
+      targetAccountId = existingAccount.id;
     } else {
       if (accountCount >= 100) {
         return NextResponse.redirect(
@@ -74,7 +77,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Create new account
-      await prisma.driveAccount.create({
+      const created = await prisma.driveAccount.create({
         data: {
           userId,
           email,
@@ -88,6 +91,16 @@ export async function GET(request: NextRequest) {
           status: 'active',
         },
       });
+      targetAccountId = created.id;
+    }
+
+    // Auto-sync all existing files from this Google Drive right now!
+    if (targetAccountId) {
+      try {
+        await syncDriveFiles(targetAccountId);
+      } catch (syncErr) {
+        console.warn('Initial file sync error:', syncErr);
+      }
     }
 
     if (userId) {
@@ -95,7 +108,7 @@ export async function GET(request: NextRequest) {
         data: {
           userId,
           action: 'connect',
-          details: `Connected Google Drive: ${email} (${displayName || 'Account'})`,
+          details: `Connected Google Drive: ${email} (${displayName || 'Account'}) with existing files synced`,
           userEmail: currentUser?.email || email,
         },
       });

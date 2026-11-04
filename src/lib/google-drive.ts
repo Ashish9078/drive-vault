@@ -175,21 +175,23 @@ export async function syncDriveFiles(accountId: string) {
       },
     });
 
-    // Batch insert file records
-    for (const file of allFiles) {
-      if (file.mimeType === 'application/vnd.google-apps.folder') continue;
-      
-      await prisma.fileRecord.create({
-        data: {
-          userId: account.userId || null,
-          filename: file.name || 'Untitled',
-          sizeBytes: BigInt(file.size || '0'),
-          mimeType: file.mimeType || 'application/octet-stream',
-          virtualPath: '/',
-          googleDriveId: file.id || null,
-          driveAccountId: accountId,
-          isChunked: false,
-        },
+    // Fast batch insert existing files using createMany
+    const recordsToInsert = allFiles
+      .filter(file => file.mimeType !== 'application/vnd.google-apps.folder')
+      .map(file => ({
+        userId: account.userId || null,
+        filename: file.name || 'Untitled',
+        sizeBytes: BigInt(file.size || '0'),
+        mimeType: file.mimeType || 'application/octet-stream',
+        virtualPath: '/',
+        googleDriveId: file.id || null,
+        driveAccountId: accountId,
+        isChunked: false,
+      }));
+
+    if (recordsToInsert.length > 0) {
+      await prisma.fileRecord.createMany({
+        data: recordsToInsert,
       });
     }
 
