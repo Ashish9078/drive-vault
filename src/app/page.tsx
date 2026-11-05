@@ -258,7 +258,7 @@ export default function Dashboard() {
       const res = await fetch('/api/files', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileId }),
+        body: JSON.stringify({ fileId, permanent: true }),
       });
       if (!res.ok) {
         throw new Error('Failed to delete file');

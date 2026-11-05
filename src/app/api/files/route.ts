@@ -154,27 +154,53 @@ export async function DELETE(request: NextRequest) {
           deletedAt: new Date(),
         },
       });
+
+      // Also move to Google Drive Trash so Google Drive reflects the deletion
+      if (file.googleDriveId && file.driveAccountId) {
+        try {
+          const { getDriveClient } = await import('@/lib/google-drive');
+          const drive = await getDriveClient(file.driveAccountId);
+          await drive.files.update({
+            fileId: file.googleDriveId,
+            requestBody: { trashed: true },
+          });
+        } catch (driveErr) {
+          console.warn('Failed to move to Google Drive trash:', driveErr);
+        }
+      }
+
       return NextResponse.json({ success: true, softDeleted: true });
     }
 
-    // If file is on Google Drive, attempt to delete it there too
+    // Permanent deletion from Google Drive
     if (file.googleDriveId && file.driveAccountId) {
       try {
         const { getDriveClient } = await import('@/lib/google-drive');
         const drive = await getDriveClient(file.driveAccountId);
-        await drive.files.delete({ fileId: file.googleDriveId });
+        try {
+          await drive.files.delete({ fileId: file.googleDriveId });
+          console.log(`Deleted file ${file.googleDriveId} permanently from Google Drive`);
+        } catch (delErr: any) {
+          console.warn('drive.files.delete failed, falling back to trashed: true:', delErr?.message);
+          await drive.files.update({
+            fileId: file.googleDriveId,
+            requestBody: { trashed: true },
+          });
+        }
 
         // Update used bytes
-        await prisma.driveAccount.update({
+        const account = await prisma.driveAccount.findUnique({
           where: { id: file.driveAccountId },
-          data: {
-            usedBytes: {
-              decrement: file.sizeBytes,
-            },
-          },
         });
-      } catch (driveError) {
-        console.warn('Failed to delete from Google Drive:', driveError);
+        if (account) {
+          const newUsed = account.usedBytes > file.sizeBytes ? account.usedBytes - file.sizeBytes : BigInt(0);
+          await prisma.driveAccount.update({
+            where: { id: file.driveAccountId },
+            data: { usedBytes: newUsed },
+          });
+        }
+      } catch (driveError: any) {
+        console.error('Failed to delete from Google Drive:', driveError?.response?.data || driveError?.message || driveError);
       }
     }
 
@@ -184,16 +210,25 @@ export async function DELETE(request: NextRequest) {
         try {
           const { getDriveClient } = await import('@/lib/google-drive');
           const drive = await getDriveClient(chunk.driveAccountId);
-          await drive.files.delete({ fileId: chunk.googleDriveId });
+          try {
+            await drive.files.delete({ fileId: chunk.googleDriveId });
+          } catch {
+            await drive.files.update({
+              fileId: chunk.googleDriveId,
+              requestBody: { trashed: true },
+            });
+          }
 
-          await prisma.driveAccount.update({
+          const account = await prisma.driveAccount.findUnique({
             where: { id: chunk.driveAccountId },
-            data: {
-              usedBytes: {
-                decrement: chunk.sizeBytes,
-              },
-            },
           });
+          if (account) {
+            const newUsed = account.usedBytes > chunk.sizeBytes ? account.usedBytes - chunk.sizeBytes : BigInt(0);
+            await prisma.driveAccount.update({
+              where: { id: chunk.driveAccountId },
+              data: { usedBytes: newUsed },
+            });
+          }
         } catch (driveError) {
           console.warn('Failed to delete chunk from Google Drive:', driveError);
         }
@@ -249,6 +284,20 @@ export async function PATCH(request: NextRequest) {
           deletedAt: null,
         },
       });
+
+      if (file.googleDriveId && file.driveAccountId) {
+        try {
+          const { getDriveClient } = await import('@/lib/google-drive');
+          const drive = await getDriveClient(file.driveAccountId);
+          await drive.files.update({
+            fileId: file.googleDriveId,
+            requestBody: { trashed: false },
+          });
+        } catch (driveErr) {
+          console.warn('Failed to un-trash on Google Drive:', driveErr);
+        }
+      }
+
       await prisma.auditLog.create({
         data: {
           userId: user.userId,
