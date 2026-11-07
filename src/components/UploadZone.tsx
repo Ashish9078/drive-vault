@@ -252,7 +252,7 @@ export default function UploadZone({ onUploadComplete, currentFolder = '/' }: Up
               <Upload size={32} className="upload-dropzone-icon" />
             </div>
             <p className="upload-dropzone-text">
-              Drag & drop your file here, or <span className="upload-dropzone-link">browse</span>
+              Tap or drop file here to upload, or <span className="upload-dropzone-link">browse files</span>
             </p>
             <p className="upload-dropzone-hint">
               Supports files up to 10GB • Auto-splits across available drives • Saves into{' '}
