@@ -5,6 +5,13 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/api/**/*': ['./prisma/dev.db', './prisma/schema.prisma'],
   },
+  experimental: {
+    proxyClientMaxBodySize: '10gb',
+    serverActions: {
+      bodySizeLimit: '10gb',
+    },
+  },
 };
 
 export default nextConfig;
+

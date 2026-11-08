@@ -9,7 +9,7 @@ import {
 } from '@/lib/upload';
 import { getCurrentUser } from '@/lib/auth';
 
-export const maxDuration = 300; // 5 minutes
+export const maxDuration = 1800; // 30 minutes for large file uploads
 
 export async function POST(request: NextRequest) {
   try {
