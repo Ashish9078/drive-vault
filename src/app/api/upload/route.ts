@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
+import prisma from '@/lib/prisma';
 import {
   findBestDriveAccount,
   findAccountsForSplitUpload,
   resumableUpload,
   splitUpload,
+  initiateResumableUpload,
   getUploadProgress,
 } from '@/lib/upload';
 import { getCurrentUser } from '@/lib/auth';
@@ -21,6 +23,100 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const contentType = request.headers.get('content-type') || '';
+
+    // Handle Direct Upload Protocol (bypasses server payload & timeout limits)
+    if (contentType.includes('application/json')) {
+      const body = await request.json();
+      const { action } = body;
+
+      if (action === 'initiate') {
+        const { filename, fileSize, mimeType, virtualPath } = body;
+        const sizeBigInt = BigInt(fileSize || 0);
+
+        const bestAccount = await findBestDriveAccount(sizeBigInt, user.userId);
+        if (!bestAccount) {
+          return NextResponse.json({
+            mode: 'form_fallback',
+            message: 'No single drive account has sufficient space; falling back to split upload',
+          });
+        }
+
+        // Handle demo account
+        if (bestAccount.encryptedAccessToken === 'demo_token' || bestAccount.email.includes('demo')) {
+          return NextResponse.json({
+            mode: 'demo',
+            accountId: bestAccount.id,
+            uploadId: uuidv4(),
+            filename,
+            virtualPath: virtualPath || '/',
+          });
+        }
+
+        // Initiate direct resumable session on Google Drive
+        const origin = request.headers.get('origin') || undefined;
+        const uploadId = uuidv4();
+        const uploadUri = await initiateResumableUpload(
+          bestAccount.id,
+          filename,
+          mimeType || 'application/octet-stream',
+          Number(fileSize),
+          origin
+        );
+
+        return NextResponse.json({
+          mode: 'direct',
+          uploadUri,
+          uploadId,
+          accountId: bestAccount.id,
+          targetAccount: bestAccount.email,
+          filename,
+          virtualPath: virtualPath || '/',
+        });
+      }
+
+      if (action === 'complete') {
+        const { uploadId, googleDriveId, filename, fileSize, mimeType, virtualPath, accountId } = body;
+
+        const fileRecord = await prisma.fileRecord.create({
+          data: {
+            userId: user.userId,
+            filename,
+            sizeBytes: BigInt(fileSize),
+            mimeType: mimeType || 'application/octet-stream',
+            virtualPath: virtualPath || '/',
+            googleDriveId,
+            driveAccountId: accountId,
+            isChunked: false,
+          },
+        });
+
+        await prisma.driveAccount.update({
+          where: { id: accountId },
+          data: {
+            usedBytes: { increment: BigInt(fileSize) },
+          },
+        });
+
+        await prisma.auditLog.create({
+          data: {
+            userId: user.userId,
+            action: 'upload',
+            details: `Uploaded ${filename} (${(Number(fileSize) / (1024 * 1024)).toFixed(2)} MB) to ${virtualPath || '/'}`,
+            userEmail: user.email,
+          },
+        });
+
+        return NextResponse.json({
+          success: true,
+          uploadId,
+          fileId: fileRecord.id,
+          googleDriveId,
+        });
+      }
+    }
+
+    // Traditional FormData upload (fallback or standard upload)
     const formData = await request.formData();
     const file = formData.get('file') as File;
 

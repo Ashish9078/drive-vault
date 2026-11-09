@@ -113,6 +113,136 @@ export default function UploadZone({ onUploadComplete, currentFolder = '/' }: Up
     });
 
     try {
+      // 1. Try Direct Resumable Upload (Bypasses all server size & timeout limits)
+      const initRes = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'initiate',
+          filename: file.name,
+          fileSize: file.size,
+          mimeType: file.type || 'application/octet-stream',
+          virtualPath: finalFolder,
+        }),
+      });
+
+      if (initRes.ok) {
+        const initData = await initRes.json();
+
+        // Direct Stream to Google Drive Cloud
+        if (initData.mode === 'direct' && initData.uploadUri) {
+          const xhr = new XMLHttpRequest();
+          const startTime = Date.now();
+
+          xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+              const progress = Math.round((e.loaded / e.total) * 100);
+              const elapsed = (Date.now() - startTime) / 1000;
+              const speed = elapsed > 0 ? Math.round(e.loaded / elapsed) : 0;
+              setUpload(prev => ({
+                ...prev,
+                progress,
+                speed,
+              }));
+            }
+          });
+
+          xhr.addEventListener('load', async () => {
+            if (xhr.status === 200 || xhr.status === 201) {
+              let googleDriveId = `gdrive_${Date.now()}`;
+              try {
+                const res = JSON.parse(xhr.responseText);
+                if (res.id) googleDriveId = res.id;
+              } catch {
+                // Ignore JSON parse if empty
+              }
+
+              // Complete record in database
+              try {
+                const compRes = await fetch('/api/upload', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    action: 'complete',
+                    uploadId: initData.uploadId,
+                    googleDriveId,
+                    filename: file.name,
+                    fileSize: file.size,
+                    mimeType: file.type || 'application/octet-stream',
+                    virtualPath: finalFolder,
+                    accountId: initData.accountId,
+                  }),
+                });
+
+                if (compRes.ok) {
+                  setUpload(prev => ({
+                    ...prev,
+                    status: 'completed',
+                    progress: 100,
+                    uploadId: initData.uploadId,
+                  }));
+                  onUploadComplete();
+                } else {
+                  const compErr = await compRes.json().catch(() => ({}));
+                  setUpload(prev => ({
+                    ...prev,
+                    status: 'error',
+                    error: compErr.error || 'Failed to save upload record',
+                  }));
+                }
+              } catch {
+                setUpload(prev => ({
+                  ...prev,
+                  status: 'error',
+                  error: 'Error saving upload metadata',
+                }));
+              }
+            } else {
+              setUpload(prev => ({
+                ...prev,
+                status: 'error',
+                error: `Google Drive upload error (${xhr.status})`,
+              }));
+            }
+          });
+
+          xhr.addEventListener('error', () => {
+            setUpload(prev => ({
+              ...prev,
+              status: 'error',
+              error: 'Network connection failed during upload',
+            }));
+          });
+
+          xhr.open('PUT', initData.uploadUri);
+          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+          xhr.send(file);
+          return;
+        }
+
+        // Demo account simulation
+        if (initData.mode === 'demo') {
+          setUpload(prev => ({ ...prev, progress: 100, status: 'completed' }));
+          await fetch('/api/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'complete',
+              uploadId: initData.uploadId,
+              googleDriveId: `demo_gdrive_id_${Date.now()}`,
+              filename: file.name,
+              fileSize: file.size,
+              mimeType: file.type || 'application/octet-stream',
+              virtualPath: finalFolder,
+              accountId: initData.accountId,
+            }),
+          });
+          onUploadComplete();
+          return;
+        }
+      }
+
+      // 2. Fallback to standard Multipart FormData upload
       const formData = new FormData();
       formData.append('file', file);
       formData.append('virtualPath', finalFolder);

@@ -93,14 +93,26 @@ export async function findAccountsForSplitUpload(totalBytes: bigint, userId?: st
 /**
  * Initiate a resumable upload session with Google Drive API.
  */
-async function initiateResumableUpload(
+export async function initiateResumableUpload(
   accountId: string,
   filename: string,
   mimeType: string,
-  fileSize: number
+  fileSize: number,
+  origin?: string
 ): Promise<string> {
   const { oauth2Client } = await getAuthenticatedClient(accountId);
   const token = await oauth2Client.getAccessToken();
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token.token}`,
+    'Content-Type': 'application/json; charset=UTF-8',
+    'X-Upload-Content-Type': mimeType,
+    'X-Upload-Content-Length': fileSize.toString(),
+  };
+
+  if (origin) {
+    headers['Origin'] = origin;
+  }
 
   const response = await withRetry(() =>
     axios.post(
@@ -110,12 +122,7 @@ async function initiateResumableUpload(
         mimeType: mimeType,
       },
       {
-        headers: {
-          Authorization: `Bearer ${token.token}`,
-          'Content-Type': 'application/json; charset=UTF-8',
-          'X-Upload-Content-Type': mimeType,
-          'X-Upload-Content-Length': fileSize.toString(),
-        },
+        headers,
       }
     )
   );
